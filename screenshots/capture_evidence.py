@@ -52,8 +52,18 @@ def main():
         for name, url in targets:
             try:
                 page.goto(url, wait_until="networkidle", timeout=25000)
+                provenance = (f"BẰNG CHỨNG CI · Commit: {os.getenv('GITHUB_SHA')} · "
+                              f"Workflow: {os.getenv('GITHUB_RUN_ID')} · Lần chạy: {os.getenv('CHICAGO_RUN_ID')} · "
+                              f"Ngày mô phỏng: {os.getenv('CHICAGO_SIMULATION_DATE', 'toàn bộ')} · "
+                              f"Lô: {os.getenv('CHICAGO_BATCH_ID', '—')}")
+                page.evaluate("""text => {
+                    const banner = document.createElement('div');
+                    banner.textContent = text;
+                    banner.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:2147483647;background:#0f172a;color:#fff;padding:8px 12px;font:12px sans-serif;pointer-events:none';
+                    document.body.appendChild(banner);
+                }""", provenance)
                 page.screenshot(path=str(OUT / f"{name}.png"), full_page=True)
-                results.append({"image": name, "url": url, "success": True})
+                results.append({"image": name, "url": url, "success": True, "provenance": provenance})
             except Exception as exc:
                 results.append({"image": name, "success": False, "error": str(exc)})
                 print(f"Không chụp được {name}: {exc}", flush=True)
