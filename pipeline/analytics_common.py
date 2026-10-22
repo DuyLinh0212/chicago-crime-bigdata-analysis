@@ -85,7 +85,10 @@ def figure(title, xlabel="", ylabel="Số vụ", size=(11, 5)):
 
 
 def save_figure(fig, folder, name):
-    fig.text(0.01, 0.01, "Chicago Crimes 2018–2023 · Bản ghi sau khử trùng · Giờ Chicago", fontsize=8, color="#64748b")
+    caption = "Chicago Crimes 2018–2023 · Bản ghi sau khử trùng · Giờ Chicago"
+    if os.getenv("CHICAGO_SIMULATION_DATE"):
+        caption += f" · Có dữ liệu MÔ PHỎNG đến {os.environ['CHICAGO_SIMULATION_DATE']}"
+    fig.text(0.01, 0.01, caption, fontsize=8, color="#64748b")
     fig.tight_layout(rect=(0, 0.04, 1, 1))
     fig.savefig(Path(folder) / name, bbox_inches="tight")
     plt.close(fig)
@@ -126,7 +129,7 @@ def publish(spark, output, gold_path, summary):
 def entrypoint(name, analyze):
     parser = argparse.ArgumentParser(description=f"Phân tích {name} từ Parquet Silver.")
     parser.add_argument("--silver-path", default="/chicago-crimes/silver")
-    parser.add_argument("--output-dir", default=f"artifacts/analystics/{name}")
+    parser.add_argument("--output-dir", default=f"{os.getenv('CHICAGO_ARTIFACT_DIR', 'artifacts')}/analystics/{name}")
     parser.add_argument("--gold-path", default=f"/chicago-crimes/gold/{os.getenv('CHICAGO_RUN_ID', 'manual')}/analystics/{name}")
     args = parser.parse_args()
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)

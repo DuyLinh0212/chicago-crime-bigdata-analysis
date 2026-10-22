@@ -1,0 +1,166 @@
+name: Kafka ingest - Ba ngày mô phỏng
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: kafka-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  kafka:
+    name: API → Kafka → Airflow → Parquet → Báo cáo
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      COMPOSE_PROJECT_NAME: kafka-${{ github.run_id }}-${{ github.run_attempt }}
+      CHICAGO_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+      CHICAGO_PROJECT_ROOT: ${{ github.workspace }}
+      CHICAGO_AIRFLOW: "1"
+      CHICAGO_AIRFLOW_DAG_ID: chicago_crimes_kafka_daily
+      CHICAGO_KAFKA_MODE: "1"
+      CHICAGO_TEST_RETRY: "1"
+      CHICAGO_NORMALIZE_ONCE: "1"
+      PYTHONIOENCODING: utf-8
+      PYTHONUNBUFFERED: "1"
+      AIRFLOW_HOME: ${{ github.workspace }}/.airflow
+      AIRFLOW__CORE__DAGS_FOLDER: ${{ github.workspace }}/airflow/dags
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__PARALLELISM: "1"
+      AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG: "1"
+      AIRFLOW__CORE__DEFAULT_TIMEZONE: America/Chicago
+      AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "True"
+      AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://127.0.0.1:8080/execution/
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow_ci@127.0.0.1:15432/airflow
+      AIRFLOW__API__WORKERS: "1"
+      AIRFLOW__DAG_PROCESSOR__REFRESH_INTERVAL: "5"
+      AIRFLOW__DAG_PROCESSOR__MIN_FILE_PROCESS_INTERVAL: "5"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Lấy code và dữ liệu nền
+        uses: actions/checkout@v4
+      - name: Cài Python cho runner
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Chuẩn bị thư mục và môi trường
+        run: |
+          mkdir -p artifacts/{logs,manifests,screenshots,silver,kafka/hdfs-state}
+          echo "CHICAGO_HOST_PYTHON=$(command -v python)" >> "$GITHUB_ENV"
+          jwt_secret="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+          echo "::add-mask::$jwt_secret"
+          echo "AIRFLOW__API_AUTH__JWT_SECRET=$jwt_secret" >> "$GITHUB_ENV"
+      - name: Cài API, Kafka client và trình duyệt chụp ảnh
+        timeout-minutes: 5
+        run: |
+          python -m pip install --no-cache-dir --disable-pip-version-check --retries 2 --timeout 30 -r ci/requirements-ingest.txt playwright==1.56.0
+          google-chrome --version
+      - name: Cài Airflow 3.3.2
+        timeout-minutes: 8
+        run: |
+          set -Eeuo pipefail
+          python -m venv .venv-airflow
+          .venv-airflow/bin/python -m pip install --no-cache-dir --disable-pip-version-check --retries 2 --timeout 30 'apache-airflow[postgres]==3.3.2' --constraint https://raw.githubusercontent.com/apache/airflow/constraints-3.3.2/constraints-3.11.txt 2>&1 | tee artifacts/logs/00-airflow-install.log
+      - name: Kiểm tra API và giao thức mô phỏng trên GitHub
+        run: |
+          set -Eeuo pipefail
+          python -m compileall -q ingest pipeline ci screenshots airflow/dags tests
+          python -m unittest discover -s tests -p test_ingest.py -v 2>&1 | tee artifacts/logs/01-api-checks.log
+      - name: Build Spark và khởi động Kafka cùng HDFS ba DataNode
+        timeout-minutes: 12
+        run: |
+          set -Eeuo pipefail
+          docker compose -f ci/compose.yaml build spark-job spark-kafka 2>&1 | tee artifacts/logs/02-build.log
+          docker compose -f ci/compose.yaml --profile airflow --profile kafka up -d --wait --wait-timeout 300 namenode datanode1 datanode2 datanode3 postgres kafka 2>&1 | tee artifacts/logs/03-start.log
+      - name: Nạp sáu CSV và tạo Silver nền một lần
+        run: |
+          set -Eeuo pipefail
+          python -m pipeline.stages prepare 2>&1 | tee artifacts/logs/04-hdfs.log
+          python -m pipeline.stages upload 2>&1 | tee artifacts/logs/05-upload-baseline.log
+          python -m pipeline.stages normalize 2>&1 | tee artifacts/logs/06-normalize-baseline.log
+          python -m pipeline.stages verify 2>&1 | tee artifacts/logs/07-verify-baseline.log
+          docker compose -f ci/compose.yaml run --rm --no-deps spark-kafka /opt/project/ingest/spark_job.py baseline 2>&1 | tee artifacts/logs/08-baseline-checksum.log
+          docker compose -f ci/compose.yaml run --rm --no-deps spark-kafka /opt/project/tests/check_ingest_spark.py 2>&1 | tee artifacts/logs/09-null-dedup-checks.log
+      - name: Mô phỏng ba ngày - Kafka kích hoạt Airflow thật
+        run: |
+          set -Eeuo pipefail
+          python -m ci.run_kafka 2>&1 | tee artifacts/logs/10-kafka-orchestration.log
+      - name: Xuất Silver cuối cùng cùng Bronze, checkpoint và sổ lô
+        run: |
+          set -Eeuo pipefail
+          python -m pipeline.stages export 2>&1 | tee artifacts/logs/11-export.log
+          docker compose -f ci/compose.yaml exec -T namenode hdfs dfs -get -f /chicago-crimes/bronze/kafka /artifacts/kafka/hdfs-state/bronze
+          docker compose -f ci/compose.yaml exec -T namenode hdfs dfs -get -f /chicago-crimes/_checkpoints /artifacts/kafka/hdfs-state/
+          docker compose -f ci/compose.yaml exec -T namenode hdfs dfs -get -f /chicago-crimes/_ingest /artifacts/kafka/hdfs-state/
+      - name: Nghiệm thu 30 vụ mới, ba DAG và 45 biểu đồ
+        run: |
+          set -Eeuo pipefail
+          python -m ingest.validate_ci 2>&1 | tee artifacts/logs/12-acceptance.log
+      - name: Thu thập log chẩn đoán kể cả khi lỗi
+        if: always()
+        run: |
+          docker compose -f ci/compose.yaml ps -a > artifacts/logs/containers.log 2>&1 || true
+          docker compose -f ci/compose.yaml logs --no-color --tail 200 > artifacts/logs/docker.log 2>&1 || true
+          if [ -d .airflow/logs ]; then cp -R .airflow/logs artifacts/airflow-task-logs; fi
+          for day in 2023-12-29 2023-12-30 2023-12-31; do
+            mkdir -p "artifacts/days/$day/logs"
+            cp artifacts/logs/kafka-*$day*.log "artifacts/days/$day/logs/" 2>/dev/null || true
+          done
+      - name: Chụp HDFS, DAG và log dạng terminal
+        if: always()
+        run: python screenshots/capture_evidence.py
+      - name: Xuất bằng chứng Kafka, log và checkpoint
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bang-chung-kafka-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/logs
+            artifacts/manifests
+            artifacts/screenshots
+            artifacts/airflow-task-logs
+            artifacts/kafka
+            artifacts/days/*/manifests
+            artifacts/days/*/screenshots
+            artifacts/days/*/bronze-events.jsonl
+          include-hidden-files: true
+          retention-days: 14
+          if-no-files-found: error
+      - name: Xuất ba bộ báo cáo theo ngày
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bao-cao-kafka-ba-ngay-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/days/*/analystics
+            artifacts/days/*/report
+          retention-days: 14
+          if-no-files-found: warn
+      - name: Xuất Parquet Silver sau Kafka
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: silver-parquet-kafka-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/silver
+          retention-days: 14
+          if-no-files-found: error
+      - name: Dọn dịch vụ trên GitHub runner
+        if: always()
+        run: |
+          python - <<'PY'
+          import json, os, signal
+          from pathlib import Path
+          for name in ('airflow-processes.json', 'kafka-processes.json'):
+              path = Path('artifacts/manifests') / name
+              if path.exists():
+                  for item in json.loads(path.read_text()):
+                      try:
+                          os.killpg(item['pid'], signal.SIGTERM)
+                      except ProcessLookupError:
+                          pass
+          PY
+          docker compose -f ci/compose.yaml down -v --remove-orphans || true

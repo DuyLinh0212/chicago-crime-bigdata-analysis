@@ -12,6 +12,16 @@ Luồng Airflow: **HDFS 3 DataNode → Upload Bronze → Normalize Silver → 4 
 
 Dữ liệu hiện tại thiếu `district` nên báo cáo chưa có thống kê quận cảnh sát; phân tích không gian sử dụng `community_area` và loại địa điểm. HDFS trên runner là môi trường tạm thời, kết thúc cùng workflow.
 
+## Kafka ingest mô phỏng theo ngày
+
+Workflow **Kafka ingest - Ba ngày mô phỏng** chạy riêng khi push `main` hoặc chọn **Run workflow** trong Actions. Xem [hướng dẫn Kafka và bằng chứng](KAFKA_INGEST.md).
+
+Luồng: **FastAPI → Producer → Kafka → consumer kích hoạt Airflow → Spark AvailableNow → Bronze JSONL → bổ sung Parquet Silver → bốn phân tích → báo cáo**.
+
+CI nạp Silver nền từ sáu CSV, sau đó sinh 10 vụ giả cho mỗi ngày 29–31/12/2023. Mỗi ngày có một DAG run và một bộ 15 biểu đồ; tổng cộng 30 vụ mới và 45 biểu đồ. Dữ liệu mô phỏng được ghi chú trong báo cáo. File Parquet nền được kiểm tra checksum và không bị ghi đè.
+
+Artifact `bao-cao-kafka-ba-ngay-*` chứa ba bộ báo cáo theo ngày; `bang-chung-kafka-*` chứa ảnh terminal, HDFS, DAG, log, offset, checkpoint và manifest; `silver-parquet-kafka-*` chứa Silver cuối cùng. Artifact giữ 14 ngày. Mọi build và kiểm thử chạy trên GitHub, không cần khởi động Docker trên máy cá nhân.
+
 ## Luồng dùng HDFS Ubuntu có sẵn
 
 Luồng chính dùng Hadoop hiện có trong Ubuntu, không tạo cụm HDFS Docker và không cần tải image NameNode/DataNode.

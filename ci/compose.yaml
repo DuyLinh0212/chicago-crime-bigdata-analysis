@@ -22,6 +22,33 @@ x-datanode: &datanode
   mem_limit: 1g
 
 services:
+  kafka:
+    image: apache/kafka:3.9.2
+    profiles: ["kafka"]
+    hostname: kafka
+    ports: ["127.0.0.1:19092:19092"]
+    environment:
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: INTERNAL://:9092,EXTERNAL://:19092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://127.0.0.1:19092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
+    healthcheck:
+      test: ["CMD", "/opt/kafka/bin/kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 10s
+      timeout: 10s
+      retries: 24
+      start_period: 20s
+    mem_limit: 1g
   postgres:
     image: postgres:16-alpine
     profiles: ["airflow"]
@@ -61,7 +88,7 @@ services:
   datanode3:
     <<: *datanode
     volumes: ["datanode3:/hadoop/dfs/data"]
-  spark-job:
+  spark-job: &spark-job
     build:
       context: ..
       dockerfile: ci/Dockerfile.spark
@@ -72,11 +99,22 @@ services:
       CHICAGO_HDFS_URI: hdfs://namenode:9000
       CHICAGO_COMMIT: ${GITHUB_SHA:-local}
       CHICAGO_RUN_ID: ${CHICAGO_RUN_ID:-manual}
+      CHICAGO_ARTIFACT_DIR: ${CHICAGO_ARTIFACT_DIR:-artifacts}
+      CHICAGO_SIMULATION_DATE: ${CHICAGO_SIMULATION_DATE:-}
+      CHICAGO_BATCH_ID: ${CHICAGO_BATCH_ID:-}
+      CHICAGO_FAIL_AFTER_PROMOTE: ${CHICAGO_FAIL_AFTER_PROMOTE:-0}
+      CHICAGO_NORMALIZE_ONCE: ${CHICAGO_NORMALIZE_ONCE:-0}
       PYTHONIOENCODING: utf-8
       PYTHONPATH: /opt/project
     volumes: ["..:/opt/project"]
     entrypoint: ["/opt/spark/bin/spark-submit", "--master", "local[2]", "--driver-memory", "1g"]
     mem_limit: 3g
+  spark-kafka:
+    <<: *spark-job
+    profiles: ["kafka-jobs"]
+    build:
+      context: ..
+      dockerfile: ci/Dockerfile.spark-kafka
 
 volumes:
   namenode:

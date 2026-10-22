@@ -1,5 +1,6 @@
 """Đọc lại Silver và kiểm tra block thực tế; chỉ chạy trên GitHub."""
 import json
+import os
 from pathlib import Path
 
 from normalize import BLOCK_SIZE, SILVER_SCHEMA, _filesystem, _check_cluster
@@ -37,11 +38,12 @@ if __name__ == "__main__":
                         raise RuntimeError("Parquet không dùng Snappy.")
         data = spark.read.schema(SILVER_SCHEMA).parquet(root.toString())
         rows = data.count()
-        expected = json.loads(Path("artifacts/manifests/normalize.json").read_text())
+        output = Path(os.getenv("CHICAGO_ARTIFACT_DIR", "artifacts")) / "manifests"
+        expected = json.loads((output / "normalize.json").read_text())
         if not count or not blocks or rows != expected["output_rows"]:
             raise RuntimeError("Số dòng hoặc số file Silver không hợp lệ.")
-        write_json("artifacts/manifests/silver-schema.json", SILVER_SCHEMA.jsonValue())
-        write_json("artifacts/manifests/hdfs-verification.json", {
+        write_json(output / "silver-schema.json", SILVER_SCHEMA.jsonValue())
+        write_json(output / "hdfs-verification.json", {
             **metadata(), "live_datanodes": 3, "partition_directories": 72,
             "parquet_files": count, "blocks": blocks, "actual_replicas": 2,
             "block_size": BLOCK_SIZE, "codec": "SNAPPY", "silver_rows": rows})

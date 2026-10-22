@@ -12,7 +12,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 COMPOSE = ["docker", "compose", "-f", str(ROOT / "ci/compose.yaml"), "-p", os.getenv("COMPOSE_PROJECT_NAME", "chicago-ci")]
-ARTIFACTS = ROOT / "artifacts"
+ARTIFACTS = ROOT / os.getenv("CHICAGO_ARTIFACT_DIR", "artifacts")
 
 
 def run(args, **kwargs):
@@ -38,7 +38,7 @@ def sha256(path):
 
 
 def spark_job(script):
-    run([*COMPOSE, "run", "--rm", "--no-deps", "spark-job", f"/opt/project/{script}"])
+    run([*COMPOSE, "run", "--rm", "--no-deps", os.getenv("CHICAGO_SPARK_SERVICE", "spark-job"), f"/opt/project/{script}"])
 
 
 def prepare():
@@ -106,7 +106,8 @@ def publish_report():
         {"name": image.name, "sha256": sha256(image), "bytes": image.stat().st_size}]
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     target = f"/chicago-crimes/gold/{os.getenv('CHICAGO_RUN_ID', 'manual')}/report"
-    hdfs("dfs", "-put", "-f", "/artifacts/report/report-overview.png", "/artifacts/report/manifest.json", target)
+    mounted = "/artifacts/" + str(ARTIFACTS.relative_to(ROOT / "artifacts")).replace("\\", "/").strip(".")
+    hdfs("dfs", "-put", "-f", f"{mounted}/report/report-overview.png", f"{mounted}/report/manifest.json", target)
     hdfs("dfs", "-ls", "-R", f"/chicago-crimes/gold/{os.getenv('CHICAGO_RUN_ID', 'manual')}")
     print("Đã ghi ảnh báo cáo và manifest cập nhật lên Gold.", flush=True)
 
@@ -116,7 +117,7 @@ def report():
     # Spark chạy root trong container; chuyển riêng đầu ra báo cáo cho user runner
     # để trình duyệt trên host có thể ghi PNG và cập nhật manifest.
     run([*COMPOSE, "run", "--rm", "--no-deps", "--entrypoint", "chown", "spark-job",
-         "-R", f"{os.getuid()}:{os.getgid()}", "/opt/project/artifacts/report"])
+         "-R", f"{os.getuid()}:{os.getgid()}", f"/opt/project/{ARTIFACTS.relative_to(ROOT).as_posix()}/report"])
 
 
 def validate_all():

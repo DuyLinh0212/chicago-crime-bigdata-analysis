@@ -72,7 +72,7 @@ def trigger_and_wait(run_id, force_failure):
     raise RuntimeError(f"DAG {run_id} vượt thời gian chờ.")
 
 
-def main():
+def start_airflow(dag_id=DAG_ID):
     LOGS.mkdir(parents=True, exist_ok=True)
     MANIFESTS.mkdir(parents=True, exist_ok=True)
     subprocess.run([str(AIRFLOW), "db", "migrate"], cwd=ROOT, check=True, timeout=180)
@@ -86,7 +86,7 @@ def main():
     deadline = time.monotonic() + 180
     while time.monotonic() < deadline:
         try:
-            request(f"/dags/{DAG_ID}")
+            request(f"/dags/{dag_id}")
             break
         except Exception:
             time.sleep(3)
@@ -94,7 +94,11 @@ def main():
         for name in ("api", "scheduler", "dag-processor"):
             print((LOGS / f"airflow-{name}.log").read_text(errors="replace")[-12000:], flush=True)
         raise RuntimeError("Airflow API hoặc DAG chưa sẵn sàng sau 180 giây.")
-    request(f"/dags/{DAG_ID}", "PATCH", {"is_paused": False})
+    request(f"/dags/{dag_id}", "PATCH", {"is_paused": False})
+
+
+def main():
+    start_airflow()
     run = os.environ["CHICAGO_RUN_ID"]
     negative = trigger_and_wait(f"manual__ci_{run}_thu_loi", True)
     positive = trigger_and_wait(f"manual__ci_{run}_thanh_cong", False)

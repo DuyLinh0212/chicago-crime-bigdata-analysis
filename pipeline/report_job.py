@@ -11,7 +11,7 @@ from pipeline.analytics_common import publish
 
 
 def build_report():
-    root = Path("artifacts")
+    root = Path(os.getenv("CHICAGO_ARTIFACT_DIR", "artifacts"))
     output = root / "report"
     output.mkdir(parents=True, exist_ok=True)
     expected = json.loads((root / "manifests/normalize.json").read_text())["output_rows"]
@@ -49,10 +49,16 @@ def build_report():
     source = json.loads((root / "manifests/source.json").read_text())
     normalized = json.loads((root / "manifests/normalize.json").read_text())
     temporal = manifests[0]["summary"]
+    simulation_note = ""
+    if normalized.get("simulation"):
+        simulation_note = (f'<p class="note"><strong>DỮ LIỆU MÔ PHỎNG CI</strong>: '
+                           f'đã bổ sung {normalized["simulation_rows"]} vụ giả đến ngày '
+                           f'{html.escape(os.environ["CHICAGO_SIMULATION_DATE"])}. '
+                           'Báo cáo kết hợp dữ liệu nền thật và các vụ giả phục vụ thực hành Kafka.</p>')
     temporal_text = html.escape(f"Tháng cao nhất (gộp các năm): {temporal['cao_nhat_thang_trong_nam']['dong_hang']}; giờ cao nhất: {temporal['cao_nhat_theo_gio']['dong_hang']}; khung giờ: {temporal['khung_gio_cao_nhat']['dong_hang']}.")
     document = f'''<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>Báo cáo Chicago Crimes</title>
 <style>body{{margin:0;background:#f1f5f9;color:#0f172a;font:16px 'DejaVu Sans',sans-serif}}main{{max-width:1400px;margin:auto;padding:32px}}header,section{{background:white;border-radius:12px;padding:24px;margin-bottom:24px}}h1{{font-size:36px;margin:0 0 16px}}h2{{color:#1d4ed8}}.kpi{{display:flex;gap:24px;flex-wrap:wrap}}.card{{background:#eff6ff;padding:20px;border-radius:8px;flex:1}}.card strong{{display:block;font-size:30px}}.charts{{display:grid;grid-template-columns:1fr 1fr;gap:16px}}figure{{margin:0;border:1px solid #e2e8f0;border-radius:8px;padding:8px}}img{{width:100%;height:auto}}figcaption{{color:#64748b;font-size:12px}}pre{{white-space:pre-wrap}}.note{{border-left:4px solid #e87924;padding:12px;background:#fff7ed}}footer{{color:#64748b}}</style></head><body><main>
-<header><h1>Báo cáo phân tích Chicago Crimes</h1><p>Toàn bộ dữ liệu 2018–2023 · Múi giờ America/Chicago · {image_count} biểu đồ</p>
+<header><h1>Báo cáo phân tích Chicago Crimes</h1><p>Toàn bộ dữ liệu 2018–2023 · Múi giờ America/Chicago · {image_count} biểu đồ</p>{simulation_note}
 <div class="kpi"><div class="card"><strong>{expected:,}</strong>Bản ghi Silver</div><div class="card"><strong>{normalized['input_rows']:,}</strong>Dòng đầu vào</div><div class="card"><strong>{normalized['duplicates_removed']:,}</strong>Dòng trùng đã loại</div></div><p>{temporal_text}</p>
 <p class="note">Nguồn hiện tại không có district, vì vậy chưa có thống kê theo quận cảnh sát. community_area là khu dân cư. Số vụ ở đây là số bản ghi sau khử trùng 12 trường; dữ liệu không có ID vụ việc.</p>
 <p>Commit: <code>{html.escape(source['commit'])}</code> · Lần chạy: {html.escape(source['run_id'])}</p></header>{''.join(sections)}

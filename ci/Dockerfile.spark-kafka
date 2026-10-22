@@ -1,0 +1,7 @@
+FROM apache/spark:3.5.1
+USER root
+RUN python3 -m pip install --no-cache-dir numpy==1.24.4 pandas==2.0.3 matplotlib==3.7.5 pillow==10.4.0
+COPY ci/install_kafka_connector.py /tmp/install_kafka_connector.py
+RUN python3 /tmp/install_kafka_connector.py
+ENV PYTHONIOENCODING=utf-8 PYTHONPATH=/opt/project
+WORKDIR /opt/project

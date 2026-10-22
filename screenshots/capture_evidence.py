@@ -3,16 +3,18 @@ import argparse
 import html
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / "artifacts/screenshots"
+ARTIFACTS = ROOT / os.getenv("CHICAGO_ARTIFACT_DIR", "artifacts")
+OUT = ARTIFACTS / "screenshots"
 
 
 def capture_report(page, overwrite=False):
-    report = ROOT / "artifacts/report/index.html"
+    report = ARTIFACTS / "report/index.html"
     if not report.is_file():
         raise RuntimeError("Chưa có báo cáo HTML để xuất ảnh.")
     page.goto(report.as_uri(), wait_until="networkidle")
@@ -43,7 +45,10 @@ def main():
             ("03-silver", "http://127.0.0.1:9870/explorer.html#/chicago-crimes/silver/year=2018/month=01"),
         ]
         if os.getenv("CHICAGO_AIRFLOW") == "1":
-            targets.append(("04-airflow-dag", "http://127.0.0.1:8080/dags/chicago_crimes_pipeline"))
+            targets.append(("04-airflow-dag", "http://127.0.0.1:8080/dags/" + os.getenv("CHICAGO_AIRFLOW_DAG_ID", "chicago_crimes_pipeline")))
+        if os.getenv("CHICAGO_KAFKA_MODE") == "1":
+            targets[1] = ("02-bronze-kafka", "http://127.0.0.1:9870/explorer.html#/chicago-crimes/bronze/kafka")
+            targets[2] = ("03-silver-incremental", "http://127.0.0.1:9870/explorer.html#/chicago-crimes/silver/year=2023/month=12")
         for name, url in targets:
             try:
                 page.goto(url, wait_until="networkidle", timeout=25000)
@@ -53,14 +58,17 @@ def main():
                 results.append({"image": name, "success": False, "error": str(exc)})
                 print(f"Không chụp được {name}: {exc}", flush=True)
         for logfile in sorted((ROOT / "artifacts/logs").glob("*.log")):
+            day = os.getenv("CHICAGO_SIMULATION_DATE")
+            if day and logfile.name.startswith("kafka-demo-") and day not in logfile.name:
+                continue
             lines = logfile.read_text(encoding="utf-8", errors="replace").splitlines()
             # Chụp phần cuối có kết quả thật; log đầy đủ vẫn nằm trong artifact.
-            body = html.escape("\n".join(lines[-65:]))
+            body = html.escape(re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", "\n".join(lines[-65:])))
             title = html.escape(f"Ảnh hiển thị log thực tế — {logfile.name}")
-            provenance = html.escape(f"Commit: {os.getenv('GITHUB_SHA')} | Lần chạy: {os.getenv('CHICAGO_RUN_ID')}")
-            page.set_content(f"<html lang='vi'><meta charset='utf-8'><style>body{{background:#111827;color:#e5e7eb;font:16px 'DejaVu Sans',sans-serif;padding:24px}}h1{{font-size:24px;color:#6ee7b7}}pre{{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.55;font-family:'DejaVu Sans Mono',monospace}}</style><h1>{title}</h1><p>{provenance}</p><pre>{body}</pre></html>")
+            provenance = html.escape(f"Commit: {os.getenv('GITHUB_SHA')} | Workflow: {os.getenv('GITHUB_RUN_ID')} | Lần chạy: {os.getenv('CHICAGO_RUN_ID')} | Ngày: {day or 'toàn bộ'} | Lô: {os.getenv('CHICAGO_BATCH_ID', '—')}")
+            page.set_content(f"<html lang='vi'><meta charset='utf-8'><style>body{{background:#0b1020;color:#e5e7eb;font:15px 'DejaVu Sans',sans-serif;padding:24px}}h1{{font-size:22px;color:#6ee7b7}}.terminal{{border:1px solid #334155;border-radius:12px;overflow:hidden}}.bar{{padding:12px;background:#1e293b;color:#cbd5e1}}pre{{padding:20px;margin:0;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5;font-family:'DejaVu Sans Mono',monospace}}</style><h1>{title}</h1><p>{provenance}</p><div class='terminal'><div class='bar'>🔴 🟡 🟢 &nbsp; GitHub runner · Terminal · {html.escape(logfile.name)}</div><pre>$ Nhật ký thực thi thực tế\n{body}</pre></div></html>")
             page.screenshot(path=str(OUT / f"log-{logfile.stem}.png"), full_page=True)
-        report = ROOT / "artifacts/report/index.html"
+        report = ARTIFACTS / "report/index.html"
         if report.is_file():
             capture_report(page)
         browser.close()
