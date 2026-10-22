@@ -1,4 +1,5 @@
 FROM apache/spark:3.5.1
 USER root
+RUN python3 -m pip install --no-cache-dir numpy==1.24.4 pandas==2.0.3 matplotlib==3.7.5 pillow==10.4.0
 ENV PYTHONIOENCODING=utf-8 PYTHONPATH=/opt/project
 WORKDIR /opt/project

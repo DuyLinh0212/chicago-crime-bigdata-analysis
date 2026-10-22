@@ -36,6 +36,12 @@ def main():
             provenance = html.escape(f"Commit: {os.getenv('GITHUB_SHA')} | Lần chạy: {os.getenv('CHICAGO_RUN_ID')}")
             page.set_content(f"<html lang='vi'><meta charset='utf-8'><style>body{{background:#111827;color:#e5e7eb;font:16px 'DejaVu Sans',sans-serif;padding:24px}}h1{{font-size:24px;color:#6ee7b7}}pre{{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.55;font-family:'DejaVu Sans Mono',monospace}}</style><h1>{title}</h1><p>{provenance}</p><pre>{body}</pre></html>")
             page.screenshot(path=str(OUT / f"log-{logfile.stem}.png"), full_page=True)
+        report = ROOT / "artifacts/report/index.html"
+        if report.is_file():
+            page.goto(report.as_uri(), wait_until="networkidle")
+            if not page.locator("img").evaluate_all("images => images.length >= 15 && images.every(i => i.complete && i.naturalWidth > 0)"):
+                raise RuntimeError("Báo cáo HTML chưa hiển thị đủ 15 ảnh biểu đồ.")
+            page.screenshot(path=str(report.parent / "report-overview.png"), full_page=True)
         browser.close()
     (OUT / "capture-manifest.json").write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
     if not all(item["success"] for item in results):

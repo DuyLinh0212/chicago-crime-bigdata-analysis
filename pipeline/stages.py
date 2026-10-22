@@ -95,14 +95,36 @@ def export():
     print("Đã xuất Parquet Silver và manifest vào artifact.", flush=True)
 
 
+def publish_report():
+    folder = ARTIFACTS / "report"
+    image = folder / "report-overview.png"
+    if not image.is_file():
+        raise RuntimeError("Chưa có ảnh tổng quan báo cáo.")
+    manifest_path = folder / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["files"] = [item for item in manifest["files"] if item["name"] != image.name] + [
+        {"name": image.name, "sha256": sha256(image), "bytes": image.stat().st_size}]
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    target = f"/chicago-crimes/gold/{os.getenv('CHICAGO_RUN_ID', 'manual')}/report"
+    hdfs("dfs", "-put", "-f", "/artifacts/report/report-overview.png", "/artifacts/report/manifest.json", target)
+    hdfs("dfs", "-ls", "-R", f"/chicago-crimes/gold/{os.getenv('CHICAGO_RUN_ID', 'manual')}")
+    print("Đã ghi ảnh báo cáo và manifest cập nhật lên Gold.", flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("stage", choices=["prepare", "upload", "normalize", "verify", "export", "checks"])
+    parser.add_argument("stage", choices=["prepare", "upload", "normalize", "verify", "export", "checks", "temporal", "crime-types", "spatial", "cross", "report", "publish-report"])
     stage = parser.parse_args().stage
     print(f"Bắt đầu bước: {stage}", flush=True)
     actions = {"prepare": prepare, "upload": upload, "normalize": lambda: spark_job("pipeline/normalize_job.py"),
                "verify": lambda: spark_job("pipeline/verify_hdfs.py"), "export": export,
-               "checks": lambda: spark_job("tests/test_normalize.py")}
+               "checks": lambda: spark_job("tests/test_normalize.py"),
+               "temporal": lambda: spark_job("analystics/temporal_analysis.py"),
+               "crime-types": lambda: spark_job("analystics/crime_type_analysis.py"),
+               "spatial": lambda: spark_job("analystics/spatial_analysis.py"),
+               "cross": lambda: spark_job("analystics/cross_analysis.py"),
+               "report": lambda: spark_job("pipeline/report_job.py"),
+               "publish-report": publish_report}
     try:
         actions[stage]()
     except Exception as exc:

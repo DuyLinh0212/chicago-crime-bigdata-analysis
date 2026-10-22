@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   pipeline:
-    name: Mốc 1 - HDFS và Parquet toàn bộ dữ liệu
+    name: Mốc 2 - HDFS, Parquet và bốn phân tích
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -59,6 +59,26 @@ jobs:
           set -o pipefail
           python -m pipeline.stages verify 2>&1 | tee artifacts/logs/07-verify.log
           python -m pipeline.stages export 2>&1 | tee artifacts/logs/08-export.log
+      - name: Phân tích thời gian - năm, tháng, ngày, giờ
+        run: |
+          set -o pipefail
+          python -m pipeline.stages temporal 2>&1 | tee artifacts/logs/09-thoi-gian.log
+      - name: Phân tích loại tội phạm và tỷ trọng
+        run: |
+          set -o pipefail
+          python -m pipeline.stages crime-types 2>&1 | tee artifacts/logs/10-loai-toi-pham.log
+      - name: Phân tích khu dân cư và loại địa điểm
+        run: |
+          set -o pipefail
+          python -m pipeline.stages spatial 2>&1 | tee artifacts/logs/11-khong-gian.log
+      - name: Phân tích đa chiều và so sánh xu hướng
+        run: |
+          set -o pipefail
+          python -m pipeline.stages cross 2>&1 | tee artifacts/logs/12-phan-tich-cheo.log
+      - name: Kiểm chứng ảnh, số liệu và xuất báo cáo HTML
+        run: |
+          set -o pipefail
+          python -m pipeline.stages report 2>&1 | tee artifacts/logs/13-bao-cao.log
       - name: Thu thập log hệ thống kể cả khi lỗi
         if: always()
         run: |
@@ -67,6 +87,11 @@ jobs:
       - name: Chụp ảnh HDFS và ảnh hiển thị log thực tế
         if: always()
         run: python screenshots/capture_evidence.py
+      - name: Ghi ảnh báo cáo lên Gold
+        if: success()
+        run: |
+          set -o pipefail
+          python -m pipeline.stages publish-report 2>&1 | tee artifacts/logs/14-gold.log
       - name: Xuất artifact bằng chứng, log và manifest
         if: always()
         uses: actions/upload-artifact@v4
@@ -86,6 +111,16 @@ jobs:
           path: artifacts/silver
           retention-days: 14
           if-no-files-found: error
+      - name: Xuất artifact biểu đồ, bảng số liệu và báo cáo
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phan-tich-bao-cao-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/analystics
+            artifacts/report
+          retention-days: 14
+          if-no-files-found: warn
       - name: Ghi tóm tắt và dọn môi trường runner
         if: always()
         run: |
