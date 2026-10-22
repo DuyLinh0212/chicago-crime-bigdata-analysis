@@ -31,7 +31,7 @@ def analyze(spark, silver_path, output_dir, gold_path) -> dict:
             winners[name] = len(leader)
             pivot = table.pivot(index="primary_type", columns=key, values="so_vu").fillna(0)
             pivot = pivot.reindex(index=types, columns=order, fill_value=0)
-            heatmap(pivot, output, f"{name}.png", title, {"month": "Tháng", "gio": "Giờ", "khu_dan_cu": "Mã khu dân cư"}[key],
+            heatmap(pivot, output, f"{name}.png", title, {"month": "Tháng", "gio": "Giờ", "khu_dan_cu": "Khu dân cư (mã — tên)"}[key],
                     "Loại tội phạm (top 10)", xlabels=[community_label(code) for code in order] if key == "khu_dan_cu" else None,
                     ylabels=[type_name(x) for x in types])
         slots = counts(data, "khung_gio", "primary_type")

@@ -93,9 +93,11 @@ def save_figure(fig, folder, name):
 
 
 def heatmap(table, folder, name, title, xlabel, ylabel, xlabels=None, ylabels=None):
-    fig, ax = plt.subplots(figsize=(max(11, len(table.columns) * .45), max(5, len(table.index) * .4)))
+    labels = xlabels if xlabels is not None else table.columns
+    long_names = max((len(str(label)) for label in labels), default=0) > 12
+    fig, ax = plt.subplots(figsize=(max(11, len(table.columns) * .45), max(5, len(table.index) * .4) + (3 if long_names else 0)))
     image = ax.imshow(table.to_numpy(dtype=float), aspect="auto", cmap="YlOrRd")
-    ax.set_xticks(range(len(table.columns)), xlabels if xlabels is not None else table.columns, rotation=45, ha="right")
+    ax.set_xticks(range(len(table.columns)), labels, rotation=90 if long_names else 45, ha="right")
     ax.set_yticks(range(len(table.index)), ylabels if ylabels is not None else table.index)
     ax.set(title=title, xlabel=xlabel, ylabel=ylabel)
     fig.colorbar(image, ax=ax, label="Số vụ")
