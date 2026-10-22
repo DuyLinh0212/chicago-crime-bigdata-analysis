@@ -31,8 +31,8 @@ Giải nén báo cáo, giữ `analystics` và `report` cạnh nhau rồi mở `r
 /chicago-crimes/
 ├── bronze/ingest_date=.../*.csv       # Sáu CSV nguyên bản
 ├── bronze/kafka/ingest_date=.../      # JSONL: event_json, topic, partition, offset, timestamp
-├── silver/year=2018..2023/month=01..12/
-│   └── year=2023/month=12/part-demo-2023-12-29-0000.parquet
+├── silver/year=2018..2023/month=01..12/part-*.parquet
+│   # File mới: silver/year=2023/month=12/part-demo-2023-12-29-0000.parquet
 ├── gold/<workflow-run>-<ngày>/       # Bốn phân tích và báo cáo theo ngày
 ├── _checkpoints/kafka-bronze/        # Checkpoint chung cho ba lần AvailableNow
 └── _ingest/demo-<ngày>/              # Plan bất biến, dấu thử lỗi và xác nhận commit

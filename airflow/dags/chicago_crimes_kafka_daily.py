@@ -17,7 +17,7 @@ def task(task_id, stage):
         env={"CHICAGO_BATCH_ID": "{{ dag_run.conf['batch_id'] }}"}, append_env=True,
         bash_command=("set -Eeuo pipefail; [[ \"$CHICAGO_BATCH_ID\" =~ ^demo-2023-12-(29|30|31)$ ]] || exit 2; "
                       f"{PYTHON} -m ingest.stages {stage} 2>&1 | "
-                      f'tee "artifacts/logs/kafka-$CHICAGO_BATCH_ID-{stage}.log"'))
+                      f'tee -a "artifacts/logs/kafka-$CHICAGO_BATCH_ID-{stage}.log"'))
 
 
 with DAG(dag_id="chicago_crimes_kafka_daily", description="Kafka theo ngày → Bronze JSONL → Parquet bổ sung → báo cáo tiếng Việt.",

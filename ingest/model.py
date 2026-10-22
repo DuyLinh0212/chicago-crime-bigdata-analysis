@@ -44,7 +44,7 @@ def validate_ready(message):
     batch_id = validate_batch_id(message.get("batch_id"))
     day = batch_id[5:]
     expected = events_for_day(day)
-    if (message.get("event_date") != day or message.get("expected_unique_count") != 10
+    if (message.get("simulation") is not True or message.get("event_date") != day or message.get("expected_unique_count") != 10
             or message.get("events_sha256") != digest(expected) or message.get("record_count") != 11):
         raise ValueError("Thông báo hoàn tất ngày không khớp dữ liệu mô phỏng.")
     starts, ends = message.get("start_offsets", {}), message.get("end_offsets", {})
