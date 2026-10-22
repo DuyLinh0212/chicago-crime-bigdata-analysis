@@ -1,9 +1,15 @@
 """Kiểm tra API và giao thức hoàn tất ngày; chỉ được workflow chạy trên GitHub."""
 import copy
+import io
+import json
 import unittest
+import urllib.error
+from unittest.mock import patch
 from fastapi.testclient import TestClient
 from ingest.api import app
 from ingest.model import DATES, digest, events_for_day, validate_batch_id, validate_ready
+from ingest.bridge import trigger
+from ci.run_kafka import wait_day
 
 
 class IngestTests(unittest.TestCase):
@@ -48,6 +54,33 @@ class IngestTests(unittest.TestCase):
         for value in ("../../silver", "demo-2023-12-32", "demo-2023-12-29;exit", None):
             with self.assertRaises(ValueError):
                 validate_batch_id(value)
+
+    def test_bridge_creates_once_and_checks_existing_conf(self):
+        ready = self.ready()
+        run = {"dag_run_id": ready["batch_id"], "conf": {"batch_id": ready["batch_id"]}}
+        with patch("ingest.bridge.urllib.request.urlopen", return_value=io.BytesIO(json.dumps(run).encode())):
+            self.assertEqual(trigger(ready), "created")
+        conflict = urllib.error.HTTPError("http://airflow", 409, "Conflict", {}, io.BytesIO(b"duplicate"))
+        with patch("ingest.bridge.urllib.request.urlopen", side_effect=[conflict, io.BytesIO(json.dumps(run).encode())]):
+            self.assertEqual(trigger(ready), "already_exists")
+        wrong = {**run, "conf": {"batch_id": "wrong"}}
+        conflict = urllib.error.HTTPError("http://airflow", 409, "Conflict", {}, io.BytesIO(b"duplicate"))
+        with patch("ingest.bridge.urllib.request.urlopen", side_effect=[conflict, io.BytesIO(json.dumps(wrong).encode())]):
+            with self.assertRaises(RuntimeError):
+                trigger(ready)
+
+    def test_bridge_does_not_mask_server_error(self):
+        failure = urllib.error.HTTPError("http://airflow", 500, "Error", {}, io.BytesIO(b"error"))
+        with patch("ingest.bridge.urllib.request.urlopen", side_effect=failure):
+            with self.assertRaises(RuntimeError):
+                trigger(self.ready())
+
+    def test_failed_dag_fails_ci_controller(self):
+        with patch("ci.run_kafka.check_processes"), patch("ci.run_kafka.save"), patch("ci.run_kafka.request", side_effect=[
+            {"state": "failed"}, {"task_instances": [{"state": "failed", "task_id": "bo_sung_parquet"}]}
+        ]):
+            with self.assertRaisesRegex(RuntimeError, "workflow phải thất bại"):
+                wait_day(DATES[0])
 
 
 if __name__ == "__main__":
