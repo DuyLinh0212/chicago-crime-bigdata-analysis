@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   pipeline:
-    name: Mốc 2 - HDFS, Parquet và bốn phân tích
+    name: Mốc 3 - Airflow điều phối toàn bộ dữ liệu
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -18,6 +18,21 @@ jobs:
       CHICAGO_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
       PYTHONIOENCODING: utf-8
       PYTHONUNBUFFERED: "1"
+      CHICAGO_AIRFLOW: "1"
+      CHICAGO_PROJECT_ROOT: ${{ github.workspace }}
+      AIRFLOW_HOME: ${{ github.workspace }}/.airflow
+      AIRFLOW__CORE__DAGS_FOLDER: ${{ github.workspace }}/airflow/dags
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__PARALLELISM: "1"
+      AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG: "1"
+      AIRFLOW__CORE__DEFAULT_TIMEZONE: America/Chicago
+      AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "True"
+      AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://127.0.0.1:8080/execution/
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow_ci@127.0.0.1:15432/airflow
+      AIRFLOW__API__WORKERS: "1"
+      AIRFLOW__DAG_PROCESSOR__REFRESH_INTERVAL: "5"
+      AIRFLOW__DAG_PROCESSOR__MIN_FILE_PROCESS_INTERVAL: "5"
     defaults:
       run:
         shell: bash
@@ -29,69 +44,47 @@ jobs:
         with:
           python-version: "3.11"
       - name: Chuẩn bị thư mục bằng chứng
-        run: mkdir -p artifacts/{logs,manifests,screenshots,silver}
+        run: |
+          mkdir -p artifacts/{logs,manifests,screenshots,silver}
+          echo "CHICAGO_HOST_PYTHON=$(command -v python)" >> "$GITHUB_ENV"
+          jwt_secret="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+          echo "::add-mask::$jwt_secret"
+          echo "AIRFLOW__API_AUTH__JWT_SECRET=$jwt_secret" >> "$GITHUB_ENV"
       - name: Cài trình duyệt chụp bằng chứng
         timeout-minutes: 4
         run: |
           python -m pip install --no-cache-dir --disable-pip-version-check --retries 2 --timeout 30 playwright==1.56.0
           google-chrome --version
+      - name: Cài Airflow 3.3.2 theo constraints chính thức
+        timeout-minutes: 8
+        run: |
+          set -o pipefail
+          python -m venv .venv-airflow
+          .venv-airflow/bin/python -m pip install --no-cache-dir --disable-pip-version-check --retries 2 --timeout 30 'apache-airflow[postgres]==3.3.2' --constraint https://raw.githubusercontent.com/apache/airflow/constraints-3.3.2/constraints-3.11.txt 2>&1 | tee artifacts/logs/00-airflow-install.log
       - name: Tạo HDFS với ba DataNode trên GitHub
         run: |
           set -o pipefail
           docker compose -f ci/compose.yaml build spark-job 2>&1 | tee artifacts/logs/00-build.log
-          docker compose -f ci/compose.yaml up -d --wait --wait-timeout 240 namenode datanode1 datanode2 datanode3 2>&1 | tee artifacts/logs/01-start.log
+          docker compose -f ci/compose.yaml --profile airflow up -d --wait --wait-timeout 240 namenode datanode1 datanode2 datanode3 postgres 2>&1 | tee artifacts/logs/01-start.log
           python -m pipeline.stages prepare 2>&1 | tee artifacts/logs/02-hdfs.log
       - name: Kiểm tra chuẩn hóa bằng dữ liệu mẫu trên GitHub
         run: |
           set -o pipefail
           python -m unittest discover -s tests -p test_wsl_runtime.py -v 2>&1 | tee artifacts/logs/03-bridge-checks.log
           python -m pipeline.stages checks 2>&1 | tee artifacts/logs/04-normalize-checks.log
-      - name: Đẩy toàn bộ dữ liệu lên Bronze và đối chiếu checksum
+      - name: Chạy Airflow thật - thử lỗi và thực thi đủ 13 task
         run: |
           set -o pipefail
-          python -m pipeline.stages upload 2>&1 | tee artifacts/logs/05-bronze.log
-      - name: Chuẩn hóa Parquet Snappy và kiểm tra chạy lại
-        run: |
-          set -o pipefail
-          python -m pipeline.stages normalize 2>&1 | tee artifacts/logs/06-normalize.log
-      - name: Kiểm tra Silver và hai bản sao block thực tế
-        run: |
-          set -o pipefail
-          python -m pipeline.stages verify 2>&1 | tee artifacts/logs/07-verify.log
-          python -m pipeline.stages export 2>&1 | tee artifacts/logs/08-export.log
-      - name: Phân tích thời gian - năm, tháng, ngày, giờ
-        run: |
-          set -o pipefail
-          python -m pipeline.stages temporal 2>&1 | tee artifacts/logs/09-thoi-gian.log
-      - name: Phân tích loại tội phạm và tỷ trọng
-        run: |
-          set -o pipefail
-          python -m pipeline.stages crime-types 2>&1 | tee artifacts/logs/10-loai-toi-pham.log
-      - name: Phân tích khu dân cư và loại địa điểm
-        run: |
-          set -o pipefail
-          python -m pipeline.stages spatial 2>&1 | tee artifacts/logs/11-khong-gian.log
-      - name: Phân tích đa chiều và so sánh xu hướng
-        run: |
-          set -o pipefail
-          python -m pipeline.stages cross 2>&1 | tee artifacts/logs/12-phan-tich-cheo.log
-      - name: Kiểm chứng ảnh, số liệu và xuất báo cáo HTML
-        run: |
-          set -o pipefail
-          python -m pipeline.stages report 2>&1 | tee artifacts/logs/13-bao-cao.log
+          .venv-airflow/bin/python ci/run_airflow.py 2>&1 | tee artifacts/logs/05-airflow-orchestration.log
       - name: Thu thập log hệ thống kể cả khi lỗi
         if: always()
         run: |
           docker compose -f ci/compose.yaml ps -a > artifacts/logs/containers.log 2>&1 || true
           docker compose -f ci/compose.yaml logs --no-color --tail 200 > artifacts/logs/docker.log 2>&1 || true
+          if [ -d .airflow/logs ]; then cp -R .airflow/logs artifacts/airflow-task-logs; fi
       - name: Chụp ảnh HDFS và ảnh hiển thị log thực tế
         if: always()
         run: python screenshots/capture_evidence.py
-      - name: Ghi ảnh báo cáo lên Gold
-        if: success()
-        run: |
-          set -o pipefail
-          python -m pipeline.stages publish-report 2>&1 | tee artifacts/logs/14-gold.log
       - name: Xuất artifact bằng chứng, log và manifest
         if: always()
         uses: actions/upload-artifact@v4
@@ -101,6 +94,7 @@ jobs:
             artifacts/logs
             artifacts/manifests
             artifacts/screenshots
+            artifacts/airflow-task-logs
           retention-days: 14
           if-no-files-found: error
       - name: Xuất artifact Parquet Silver
@@ -127,4 +121,15 @@ jobs:
           echo '## Kết quả pipeline Chicago Crimes' >> "$GITHUB_STEP_SUMMARY"
           echo "Commit: $GITHUB_SHA — Lần chạy: $CHICAGO_RUN_ID" >> "$GITHUB_STEP_SUMMARY"
           echo 'Tải ảnh, log và manifest tại mục Artifacts bên dưới workflow. HDFS chỉ tồn tại trong lần chạy này.' >> "$GITHUB_STEP_SUMMARY"
+          python - <<'PY'
+          import json, os, signal
+          from pathlib import Path
+          path = Path('artifacts/manifests/airflow-processes.json')
+          if path.exists():
+              for item in json.loads(path.read_text()):
+                  try:
+                      os.killpg(item['pid'], signal.SIGTERM)
+                  except ProcessLookupError:
+                      pass
+          PY
           docker compose -f ci/compose.yaml down -v --remove-orphans || true

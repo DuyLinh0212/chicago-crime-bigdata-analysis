@@ -22,6 +22,20 @@ x-datanode: &datanode
   mem_limit: 1g
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    profiles: ["airflow"]
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow_ci
+      POSTGRES_DB: airflow
+    ports: ["127.0.0.1:15432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+    mem_limit: 512m
   namenode:
     image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
     environment:

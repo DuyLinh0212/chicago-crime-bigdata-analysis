@@ -119,9 +119,30 @@ def report():
          "-R", f"{os.getuid()}:{os.getgid()}", "/opt/project/artifacts/report"])
 
 
+def validate_all():
+    normalized = json.loads((ARTIFACTS / "manifests/normalize.json").read_text())
+    verified = json.loads((ARTIFACTS / "manifests/hdfs-verification.json").read_text())
+    charts = list((ARTIFACTS / "analystics").glob("*/*.png"))
+    if len(charts) != 15 or normalized["output_rows"] != verified["silver_rows"]:
+        raise RuntimeError("Số biểu đồ hoặc số dòng đầu ra chưa đúng.")
+    run_id = os.environ["CHICAGO_RUN_ID"]
+    for name in ("thoi_gian", "loai_toi_pham", "khong_gian", "phan_tich_cheo"):
+        manifest = json.loads((ARTIFACTS / "analystics" / name / "manifest.json").read_text(encoding="utf-8"))
+        if manifest["summary"]["so_vu"] != normalized["output_rows"] or manifest["run_id"] != run_id or manifest["commit"] != os.environ["GITHUB_SHA"]:
+            raise RuntimeError(f"Manifest phân tích không khớp: {name}")
+        hdfs("dfs", "-test", "-e", f"/chicago-crimes/gold/{run_id}/analystics/{name}/manifest.json")
+    image = ARTIFACTS / "report/report-overview.png"
+    remote = hdfs("dfs", "-cat", f"/chicago-crimes/gold/{run_id}/report/report-overview.png", capture_output=True).stdout
+    if hashlib.sha256(remote).hexdigest() != sha256(image):
+        raise RuntimeError("Ảnh báo cáo Gold không khớp artifact.")
+    save_json("pipeline-validation.json", {"commit": os.environ["GITHUB_SHA"], "run_id": run_id,
+              "silver_rows": normalized["output_rows"], "charts": len(charts), "groups": 4, "gold_report_verified": True})
+    print("Đã xác nhận toàn bộ đầu ra: 15 biểu đồ, bốn phân tích, Silver và ảnh báo cáo trên Gold.", flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("stage", choices=["prepare", "upload", "normalize", "verify", "export", "checks", "temporal", "crime-types", "spatial", "cross", "report", "publish-report"])
+    parser.add_argument("stage", choices=["prepare", "upload", "normalize", "verify", "export", "checks", "temporal", "crime-types", "spatial", "cross", "report", "publish-report", "validate-all"])
     stage = parser.parse_args().stage
     print(f"Bắt đầu bước: {stage}", flush=True)
     actions = {"prepare": prepare, "upload": upload, "normalize": lambda: spark_job("pipeline/normalize_job.py"),
@@ -132,7 +153,7 @@ def main():
                "spatial": lambda: spark_job("analystics/spatial_analysis.py"),
                "cross": lambda: spark_job("analystics/cross_analysis.py"),
                "report": report,
-               "publish-report": publish_report}
+               "publish-report": publish_report, "validate-all": validate_all}
     try:
         actions[stage]()
     except Exception as exc:

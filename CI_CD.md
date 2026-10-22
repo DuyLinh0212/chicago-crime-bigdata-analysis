@@ -37,3 +37,18 @@ So sánh bốn nhóm dùng THEFT, ROBBERY, ASSAULT + BATTERY, HOMICIDE; trộm x
 Gold lưu theo `/chicago-crimes/gold/<run-id>/analystics/<nhóm>` và `/chicago-crimes/gold/<run-id>/report`; có bảng số liệu CSV, PNG, manifest và HTML. Workflow kiểm tra đủ 15 ảnh trước khi xuất báo cáo. Các log nghiệp vụ đều bằng tiếng Việt.
 
 Mốc 1 đã thành công: [run 39773189166](https://github.com/DuyLinh0212/chicago-crime-bigdata-analysis/actions/runs/39773189166), 1.450.979 dòng nguồn → 1.448.706 dòng Silver, loại 2.273 dòng trùng.
+
+Mốc 2 đã thành công: [run 39775032785](https://github.com/DuyLinh0212/chicago-crime-bigdata-analysis/actions/runs/39775032785), đủ 15 biểu đồ, bảng CSV, manifest, HTML và PNG tổng quan; ảnh báo cáo cũng được ghi và kiểm chứng trên Gold.
+
+## Mốc 3: Airflow điều phối thật
+
+Airflow 3.3.2/Python 3.11 được cài trên GitHub runner bằng constraints chính thức; metadata dùng PostgreSQL 16. API server, scheduler và DAG processor chạy thật. DAG `chicago_crimes_pipeline` nằm trong `airflow/dags`, có 13 task; tối đa một DAG run và một task đồng thời. Bốn phân tích nằm trong TaskGroup, thực thi lần lượt để giới hạn RAM. Các task gọi cùng CLI `python -m pipeline.stages <bước>` đã đạt CI ở hai mốc trước.
+
+Workflow khởi động HDFS/PostgreSQL rồi kiểm tra dữ liệu mẫu. Tiếp theo `ci/run_airflow.py` kích hoạt hai DAG run qua REST API:
+
+1. `*_thu_loi`: task kiểm tra đầu vào cố ý thoát lỗi; CI yêu cầu DAG có trạng thái **failed**. Đây là lần thử lỗi mong đợi, không phải lỗi của lần chạy chính.
+2. `*_thanh_cong`: upload toàn bộ dữ liệu, Normalize hai lần, kiểm tra Silver, chạy bốn phân tích, tạo HTML/PNG, công bố Gold, xuất Silver và xác nhận đầu ra. CI yêu cầu đủ **13 task success**.
+
+Không đánh dấu thành công thủ công, không dùng task `all_done` để che lỗi. Bất kỳ trạng thái bất thường hay quá thời gian đều làm workflow thất bại. Sau DAG, workflow chụp giao diện HDFS/Airflow và xuất artifact. Các file `airflow-*.json` trong manifests lưu trạng thái thực tế; `airflow-task-logs` chứa log task đầy đủ.
+
+API Airflow chỉ lắng nghe loopback của runner; chế độ quản trị đơn giản không mật khẩu chỉ dùng cho môi trường CI tạm thời. DAG không tự lập lịch hằng ngày, không backfill. Mỗi push main hoặc Run workflow là một lượt chạy toàn bộ. Không cần tự tạo GitHub secrets để chạy cấu hình CI này.

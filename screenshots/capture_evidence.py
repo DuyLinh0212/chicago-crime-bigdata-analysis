@@ -1,4 +1,5 @@
 """Chụp HDFS và ảnh hiển thị log thật bằng trình duyệt trên GitHub runner."""
+import argparse
 import html
 import json
 import os
@@ -10,17 +11,40 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "artifacts/screenshots"
 
 
+def capture_report(page, overwrite=False):
+    report = ROOT / "artifacts/report/index.html"
+    if not report.is_file():
+        raise RuntimeError("Chưa có báo cáo HTML để xuất ảnh.")
+    page.goto(report.as_uri(), wait_until="networkidle")
+    if not page.locator("img").evaluate_all("images => images.length >= 15 && images.every(i => i.complete && i.naturalWidth > 0)"):
+        raise RuntimeError("Báo cáo HTML chưa hiển thị đủ 15 ảnh biểu đồ.")
+    image = report.parent / "report-overview.png"
+    if overwrite or not image.is_file():
+        page.screenshot(path=str(image), full_page=True)
+    print("Đã xác nhận báo cáo hiển thị đủ ảnh và xuất PNG tổng quan.", flush=True)
+
+
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--report-only", action="store_true", help="Chỉ xuất PNG báo cáo trong task Airflow.")
+    args = parser.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
     results = []
     with sync_playwright() as p:
         browser = p.chromium.launch(executable_path=shutil.which("google-chrome") or shutil.which("chromium"), args=["--no-sandbox"])
         page = browser.new_page(viewport={"width": 1440, "height": 1000}, device_scale_factor=1)
-        for name, url in [
+        if args.report_only:
+            capture_report(page, overwrite=True)
+            browser.close()
+            return
+        targets = [
             ("01-namenode", "http://127.0.0.1:9870/dfshealth.html#tab-datanode"),
             ("02-bronze", "http://127.0.0.1:9870/explorer.html#/chicago-crimes/bronze"),
             ("03-silver", "http://127.0.0.1:9870/explorer.html#/chicago-crimes/silver/year=2018/month=01"),
-        ]:
+        ]
+        if os.getenv("CHICAGO_AIRFLOW") == "1":
+            targets.append(("04-airflow-dag", "http://127.0.0.1:8080/dags/chicago_crimes_pipeline"))
+        for name, url in targets:
             try:
                 page.goto(url, wait_until="networkidle", timeout=25000)
                 page.screenshot(path=str(OUT / f"{name}.png"), full_page=True)
@@ -38,10 +62,7 @@ def main():
             page.screenshot(path=str(OUT / f"log-{logfile.stem}.png"), full_page=True)
         report = ROOT / "artifacts/report/index.html"
         if report.is_file():
-            page.goto(report.as_uri(), wait_until="networkidle")
-            if not page.locator("img").evaluate_all("images => images.length >= 15 && images.every(i => i.complete && i.naturalWidth > 0)"):
-                raise RuntimeError("Báo cáo HTML chưa hiển thị đủ 15 ảnh biểu đồ.")
-            page.screenshot(path=str(report.parent / "report-overview.png"), full_page=True)
+            capture_report(page)
         browser.close()
     (OUT / "capture-manifest.json").write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
     if not all(item["success"] for item in results):

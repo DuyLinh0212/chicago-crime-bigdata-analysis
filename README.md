@@ -1,10 +1,18 @@
-# Chicago Crimes — HDFS có sẵn trong Ubuntu WSL
+# Chicago Crimes — HDFS, Parquet và báo cáo tự động
 
 ## Chạy tự động trên GitHub
 
 Repository: [chicago-crime-bigdata-analysis](https://github.com/DuyLinh0212/chicago-crime-bigdata-analysis).
 
 Mỗi lần push `main` sẽ chạy toàn bộ dữ liệu trên GitHub Actions. Xem [hướng dẫn CI/CD, log và artifact](CI_CD.md). Các cấu hình CI nằm riêng trong `ci`, không cần chạy pipeline trên máy cá nhân.
+
+Luồng Airflow: **HDFS 3 DataNode → Upload Bronze → Normalize Silver → 4 phân tích → HTML/PNG báo cáo → kiểm chứng Gold và artifact**. Toàn bộ sáu CSV 2018–2023 được commit trong repo; mỗi lần chạy xử lý 1.450.979 dòng nguồn, tạo 1.448.706 bản ghi Silver sau khử trùng.
+
+Ở mục **Actions → chọn lần chạy → Artifacts**, tải `phan-tich-bao-cao-*` để lấy 15 biểu đồ, bảng CSV và báo cáo. Giải nén rồi mở `report/index.html` hoặc `report/report-overview.png`. Tải `bang-chung-*` để lấy ảnh HDFS, ảnh DAG, ảnh hiển thị log và trạng thái task; `silver-parquet-*` chứa Parquet chuẩn hóa. Artifact giữ 14 ngày.
+
+Dữ liệu hiện tại thiếu `district` nên báo cáo chưa có thống kê quận cảnh sát; phân tích không gian sử dụng `community_area` và loại địa điểm. HDFS trên runner là môi trường tạm thời, kết thúc cùng workflow.
+
+## Luồng dùng HDFS Ubuntu có sẵn
 
 Luồng chính dùng Hadoop hiện có trong Ubuntu, không tạo cụm HDFS Docker và không cần tải image NameNode/DataNode.
 
