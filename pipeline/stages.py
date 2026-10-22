@@ -111,6 +111,14 @@ def publish_report():
     print("Đã ghi ảnh báo cáo và manifest cập nhật lên Gold.", flush=True)
 
 
+def report():
+    spark_job("pipeline/report_job.py")
+    # Spark chạy root trong container; chuyển riêng đầu ra báo cáo cho user runner
+    # để trình duyệt trên host có thể ghi PNG và cập nhật manifest.
+    run([*COMPOSE, "run", "--rm", "--no-deps", "--entrypoint", "chown", "spark-job",
+         "-R", f"{os.getuid()}:{os.getgid()}", "/opt/project/artifacts/report"])
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("stage", choices=["prepare", "upload", "normalize", "verify", "export", "checks", "temporal", "crime-types", "spatial", "cross", "report", "publish-report"])
@@ -123,7 +131,7 @@ def main():
                "crime-types": lambda: spark_job("analystics/crime_type_analysis.py"),
                "spatial": lambda: spark_job("analystics/spatial_analysis.py"),
                "cross": lambda: spark_job("analystics/cross_analysis.py"),
-               "report": lambda: spark_job("pipeline/report_job.py"),
+               "report": report,
                "publish-report": publish_report}
     try:
         actions[stage]()
