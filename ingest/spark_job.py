@@ -10,7 +10,7 @@ from pyspark.sql import functions as F, types as T
 from normalize import (SOURCE_COLUMNS, SILVER_SCHEMA, normalize_frame, _filesystem,
                        _check_cluster, _validate_staging)
 from pipeline.spark_support import make_spark, metadata, write_json
-from ingest.model import DATES, EVENT_TOPIC, events_for_day, validate_batch_id, validate_ready
+from ingest.model import DATES, EVENT_TOPIC, events_for_day, jsonl_record, validate_batch_id, validate_ready
 
 SILVER = "/chicago-crimes/silver"
 BRONZE = "/chicago-crimes/bronze/kafka"
@@ -119,7 +119,7 @@ def ingest(spark, ready, output):
     write_json(output / "manifests/kafka-progress.json", {**metadata(), "batch": ready,
                "checkpoint": CHECKPOINT, "progress": list(query.recentProgress), "bronze_records": len(records)})
     raw_artifact = output / "bronze-events.jsonl"
-    raw_artifact.write_text("".join(json.dumps({**r.asDict(), "kafka_timestamp": str(r.kafka_timestamp)}, ensure_ascii=False) + "\n" for r in records), encoding="utf-8")
+    raw_artifact.write_text("".join(jsonl_record(r.asDict()) for r in records), encoding="utf-8")
     print(f"Spark AvailableNow: đã xác nhận {len(records)} thông điệp, {len(set(e['event_id'] for e in events))} vụ duy nhất ngày {ready['event_date']} trong Bronze JSONL.", flush=True)
 
 

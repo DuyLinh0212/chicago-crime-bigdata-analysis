@@ -4,10 +4,11 @@ import io
 import json
 import unittest
 import urllib.error
+from datetime import date, datetime
 from unittest.mock import patch
 from fastapi.testclient import TestClient
 from ingest.api import app
-from ingest.model import DATES, digest, events_for_day, validate_batch_id, validate_ready
+from ingest.model import DATES, digest, events_for_day, jsonl_record, validate_batch_id, validate_ready
 from ingest.bridge import trigger
 from ci.run_kafka import wait_day
 
@@ -40,6 +41,12 @@ class IngestTests(unittest.TestCase):
 
     def test_health(self):
         self.assertTrue(self.client.get("/health").json()["simulation"])
+
+    def test_bronze_dates_serialize_to_jsonl(self):
+        record = jsonl_record({"ingest_date": date(2026, 10, 22), "kafka_timestamp": datetime(2026, 10, 22, 12)})
+        self.assertTrue(record.endswith("\n"))
+        self.assertEqual(json.loads(record)["ingest_date"], "2026-10-22")
+        self.assertIsInstance(json.loads(record)["kafka_timestamp"], str)
 
     def test_ready_protocol(self):
         self.assertEqual(validate_ready(self.ready()), self.ready())

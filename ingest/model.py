@@ -13,6 +13,11 @@ def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
 
 
+def jsonl_record(value):
+    """Spark bổ sung cột phân vùng kiểu date khi đọc lại Bronze."""
+    return json.dumps(value, ensure_ascii=False, default=str) + "\n"
+
+
 def validate_batch_id(value):
     if not isinstance(value, str) or not re.fullmatch(r"demo-2023-12-(29|30|31)", value):
         raise ValueError("Mã lô mô phỏng không hợp lệ.")
