@@ -1,6 +1,7 @@
 """Xếp hạng khu dân cư, địa điểm; nguồn không có cột quận cảnh sát."""
 from pathlib import Path
 from pyspark.sql import functions as F
+from pipeline.community_areas import community_label
 from pipeline.analytics_common import read_silver, counts, maximum, figure, save_figure, heatmap, publish, entrypoint, LOCATION_NAMES, COLORS
 
 
@@ -18,8 +19,8 @@ def analyze(spark, silver_path, output_dir, gold_path) -> dict:
             table["ty_trong_phan_tram"] = table.so_vu / total * 100
             table.to_csv(output / f"{name}.csv", index=False, encoding="utf-8-sig")
         top = areas.head(15).iloc[::-1]
-        fig, ax = figure("15 khu dân cư có nhiều vụ nhất", "Số vụ", "Mã community_area", size=(12, 8))
-        ax.barh(top.khu_dan_cu, top.so_vu, color=COLORS[0])
+        fig, ax = figure("15 khu dân cư có nhiều vụ nhất", "Số vụ", "Khu dân cư (mã — tên)", size=(13, 8))
+        ax.barh(top.nhan_khu_dan_cu, top.so_vu, color=COLORS[0])
         save_figure(fig, output, "xep_hang_khu_dan_cu.png")
         top = locations.head(15).iloc[::-1]
         labels = [LOCATION_NAMES.get(x, f"Địa điểm: {x}") for x in top.dia_diem]
@@ -30,13 +31,14 @@ def analyze(spark, silver_path, output_dir, gold_path) -> dict:
         matrix.to_csv(output / "khu_dan_cu_theo_thang.csv", index=False, encoding="utf-8-sig")
         pivot = matrix.pivot(index="khu_dan_cu", columns="month", values="so_vu").fillna(0)
         pivot = pivot.reindex(index=areas.head(15).khu_dan_cu, columns=[f"{m:02d}" for m in range(1, 13)], fill_value=0)
-        heatmap(pivot, output, "nhiet_khu_dan_cu_thang.png", "Số vụ theo khu dân cư và tháng (gộp các năm)", "Tháng", "Mã khu dân cư")
+        heatmap(pivot, output, "nhiet_khu_dan_cu_thang.png", "Số vụ theo khu dân cư và tháng (gộp các năm)", "Tháng", "Khu dân cư (mã — tên)", ylabels=[community_label(code) for code in pivot.index])
         missing_area = data.filter(F.col("community_area").isNull()).count()
         missing_location = data.filter(F.col("location_description").isNull()).count()
         summary = {"so_vu": total, "khu_dan_cu_cao_nhat": maximum(areas, "khu_dan_cu"),
                    "thieu_khu_dan_cu": missing_area, "ty_le_thieu_khu_phan_tram": missing_area / total * 100,
                    "thieu_dia_diem": missing_location, "ty_le_thieu_dia_diem_phan_tram": missing_location / total * 100,
                    "district_available": False,
+                   "ten_khu_dan_cu_cao_nhat": [community_label(code) for code in maximum(areas, "khu_dan_cu")["dong_hang"]],
                    "ghi_chu": "Sáu CSV không có district: chưa có thống kê theo quận cảnh sát. community_area là khu dân cư, không phải quận cảnh sát."}
         print(f"Đã phân tích {len(areas)} nhóm khu dân cư; thiếu khu: {missing_area:,}; thiếu địa điểm: {missing_location:,}.", flush=True)
         print(summary["ghi_chu"], flush=True)

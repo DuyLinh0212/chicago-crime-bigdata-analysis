@@ -36,6 +36,8 @@ So sánh bốn nhóm dùng THEFT, ROBBERY, ASSAULT + BATTERY, HOMICIDE; trộm x
 
 Gold lưu theo `/chicago-crimes/gold/<run-id>/analystics/<nhóm>` và `/chicago-crimes/gold/<run-id>/report`; có bảng số liệu CSV, PNG, manifest và HTML. Workflow kiểm tra đủ 15 ảnh trước khi xuất báo cáo. Các log nghiệp vụ đều bằng tiếng Việt.
 
+Tên 77 khu dân cư lấy từ [City of Chicago GIS — Community Areas](https://gisapps.chicago.gov/arcgis/rest/services/ExternalApps/extoperational/MapServer/0), lưu snapshot trong `data/reference/community_areas.json` kèm nguồn, thời điểm lấy và checksum phản hồi. Nhãn biểu đồ dùng “mã — tên”, ví dụ “25 — Austin”, “8 — Near North Side”; CSV giữ mã và thêm `ten_khu_dan_cu`, `nhan_khu_dan_cu`. Giữ nguyên tên địa danh tiếng Anh. Các trường hợp thiếu mã vẫn là Không xác định. CI kiểm tra đủ 77 mã duy nhất và các tên tiêu biểu; không cần gọi API tên khu trong mỗi lần chạy.
+
 Mốc 1 đã thành công: [run 39773189166](https://github.com/DuyLinh0212/chicago-crime-bigdata-analysis/actions/runs/39773189166), 1.450.979 dòng nguồn → 1.448.706 dòng Silver, loại 2.273 dòng trùng.
 
 Mốc 2 đã thành công: [run 39775032785](https://github.com/DuyLinh0212/chicago-crime-bigdata-analysis/actions/runs/39775032785), đủ 15 biểu đồ, bảng CSV, manifest, HTML và PNG tổng quan; ảnh báo cáo cũng được ghi và kiểm chứng trên Gold.

@@ -14,6 +14,7 @@ from pyspark.sql import functions as F
 
 from normalize import SILVER_SCHEMA, _filesystem
 from pipeline.spark_support import make_spark, metadata, write_json
+from pipeline.community_areas import add_community_names, REFERENCE
 
 plt.rcParams.update({"font.family": "DejaVu Sans", "font.size": 11,
                      "axes.spines.top": False, "axes.spines.right": False,
@@ -46,6 +47,9 @@ LOCATION_NAMES = {"STREET": "Đường phố", "RESIDENCE": "Nhà ở", "APARTME
                   "SMALL RETAIL STORE": "Cửa hàng bán lẻ nhỏ", "RESTAURANT": "Nhà hàng",
                   "GAS STATION": "Trạm xăng", "VEHICLE NON-COMMERCIAL": "Xe cá nhân",
                   "DEPARTMENT STORE": "Cửa hàng bách hóa", "GROCERY FOOD STORE": "Cửa hàng thực phẩm"}
+LOCATION_NAMES.update({"PARKING LOT / GARAGE (NON RESIDENTIAL)": "Bãi đỗ xe/nhà xe (ngoài nhà ở)",
+                       "VEHICLE - NON-COMMERCIAL": "Xe cá nhân", "RESIDENCE - PORCH / HALLWAY": "Hiên/hành lang nhà ở",
+                       "RESIDENCE PORCH/HALLWAY": "Hiên/hành lang nhà ở", "COMMERCIAL / BUSINESS OFFICE": "Văn phòng kinh doanh"})
 
 
 def type_name(value):
@@ -64,7 +68,7 @@ def read_silver(spark, path):
 
 
 def counts(data, *columns):
-    return data.groupBy(*columns).count().withColumnRenamed("count", "so_vu").toPandas()
+    return add_community_names(data.groupBy(*columns).count().withColumnRenamed("count", "so_vu").toPandas())
 
 
 def maximum(frame, key):
@@ -107,7 +111,8 @@ def publish(spark, output, gold_path, summary):
         if file.is_file() and file.name != "manifest.json":
             files.append({"name": file.name, "sha256": hashlib.sha256(file.read_bytes()).hexdigest(), "bytes": file.stat().st_size})
     manifest = {**metadata(), "silver_path": "/chicago-crimes/silver", "gold_path": gold_path,
-                "timezone": "America/Chicago", "summary": summary, "files": files}
+                "timezone": "America/Chicago", "community_names_source": REFERENCE["source"],
+                "summary": summary, "files": files}
     write_json(Path(output) / "manifest.json", manifest)
     for file in sorted(Path(output).glob("*")):
         if file.is_file():

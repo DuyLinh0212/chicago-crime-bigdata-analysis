@@ -2,6 +2,7 @@
 from pathlib import Path
 import pandas as pd
 import matplotlib.pyplot as plt
+from pipeline.community_areas import community_label
 from pipeline.analytics_common import read_silver, counts, heatmap, save_figure, publish, entrypoint, type_name, COLORS
 
 
@@ -31,7 +32,8 @@ def analyze(spark, silver_path, output_dir, gold_path) -> dict:
             pivot = table.pivot(index="primary_type", columns=key, values="so_vu").fillna(0)
             pivot = pivot.reindex(index=types, columns=order, fill_value=0)
             heatmap(pivot, output, f"{name}.png", title, {"month": "Tháng", "gio": "Giờ", "khu_dan_cu": "Mã khu dân cư"}[key],
-                    "Loại tội phạm (top 10)", ylabels=[type_name(x) for x in types])
+                    "Loại tội phạm (top 10)", xlabels=[community_label(code) for code in order] if key == "khu_dan_cu" else None,
+                    ylabels=[type_name(x) for x in types])
         slots = counts(data, "khung_gio", "primary_type")
         slots.to_csv(output / "loai_theo_khung_gio.csv", index=False, encoding="utf-8-sig")
         slots.loc[slots.so_vu == slots.groupby("khung_gio").so_vu.transform("max")].to_csv(
@@ -47,7 +49,7 @@ def analyze(spark, silver_path, output_dir, gold_path) -> dict:
             area = top_areas[index]
             table = trends.loc[trends.khu_dan_cu == area].set_index("nam_thang").reindex(months, fill_value=0)
             ax.plot(range(72), table.so_vu, color=COLORS[index], linewidth=1.7)
-            ax.set_title(f"Khu dân cư {area}")
+            ax.set_title(community_label(area))
             ax.set_ylabel("Số vụ")
             ax.grid(alpha=.2)
             ticks = list(range(0, 72, 12))
@@ -57,6 +59,7 @@ def analyze(spark, silver_path, output_dir, gold_path) -> dict:
         save_figure(fig, output, "so_sanh_xu_huong_khu.png")
         print("Đã xác định loại phổ biến theo từng tháng, khu dân cư và giờ; giữ tất cả trường hợp đồng hạng.", flush=True)
         return publish(spark, output, gold_path, {"so_vu": total, "top_types": types, "top_areas": top_areas[:6],
+                                                "ten_khu_dan_cu": [community_label(code) for code in top_areas[:6]],
                                                 "so_nhom_dan_dau": winners, "so_bieu_do": 4})
     finally:
         data.unpersist()

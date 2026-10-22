@@ -71,6 +71,7 @@ jobs:
         run: |
           set -o pipefail
           python -m unittest discover -s tests -p test_wsl_runtime.py -v 2>&1 | tee artifacts/logs/03-bridge-checks.log
+          python -m unittest discover -s tests -p test_community_areas.py -v 2>&1 | tee artifacts/logs/03-community-names.log
           python -m pipeline.stages checks 2>&1 | tee artifacts/logs/04-normalize-checks.log
       - name: Chạy Airflow thật - thử lỗi và thực thi đủ 13 task
         run: |
