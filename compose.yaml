@@ -1,0 +1,20 @@
+# Luồng chính dùng HDFS/Spark trong Ubuntu WSL qua các script PowerShell.
+# File này chỉ dành cho kiểm tra Spark tùy chọn, không tạo NameNode/DataNode.
+# Cấu hình Docker cũ được giữ tại compose.docker-legacy.yaml để tham khảo.
+name: chicago-crimes
+services:
+  spark-check:
+    image: apache/spark:3.5.1
+    profiles: ["checks"]
+    volumes:
+      - .:/opt/project:ro
+    environment:
+      PYTHONPATH: /opt/project
+      PYTHONIOENCODING: utf-8
+    entrypoint: ["/opt/spark/bin/spark-submit"]
+    command:
+      - --master
+      - local[2]
+      - --driver-memory
+      - 1g
+      - /opt/project/tests/test_normalize.py

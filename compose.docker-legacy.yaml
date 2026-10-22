@@ -1,0 +1,121 @@
+x-hadoop-environment: &hadoop-environment
+  CORE_CONF_fs_defaultFS: hdfs://namenode:9000
+  HDFS_CONF_dfs_replication: "2"
+  HDFS_CONF_dfs_blocksize: "134217728"
+  HDFS_CONF_dfs_namenode_datanode_registration_ip___hostname___check: "false"
+
+services:
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    restart: unless-stopped
+    ports:
+      - "9870:9870"
+      - "9000:9000"
+    volumes:
+      - chicago_namenode_data:/hadoop/dfs/name
+    environment:
+      <<: *hadoop-environment
+      CLUSTER_NAME: chicago-crimes
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9870/"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  datanode1:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    restart: unless-stopped
+    depends_on:
+      namenode:
+        condition: service_healthy
+    volumes:
+      - chicago_datanode1_data:/hadoop/dfs/data
+    environment:
+      <<: *hadoop-environment
+      SERVICE_PRECONDITION: namenode:9870
+
+  datanode2:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    restart: unless-stopped
+    depends_on:
+      namenode:
+        condition: service_healthy
+    volumes:
+      - chicago_datanode2_data:/hadoop/dfs/data
+    environment:
+      <<: *hadoop-environment
+      SERVICE_PRECONDITION: namenode:9870
+
+  datanode3:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    restart: unless-stopped
+    depends_on:
+      namenode:
+        condition: service_healthy
+    volumes:
+      - chicago_datanode3_data:/hadoop/dfs/data
+    environment:
+      <<: *hadoop-environment
+      SERVICE_PRECONDITION: namenode:9870
+
+  hdfs-init:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    restart: "no"
+    depends_on:
+      namenode:
+        condition: service_healthy
+      datanode1:
+        condition: service_healthy
+      datanode2:
+        condition: service_healthy
+      datanode3:
+        condition: service_healthy
+    environment:
+      <<: *hadoop-environment
+    command:
+      - bash
+      - -lc
+      - |
+        set -eu
+        hdfs dfs -mkdir -p /chicago-crimes/bronze /chicago-crimes/gold
+        for year in 2018 2019 2020 2021 2022 2023; do
+          for month in 01 02 03 04 05 06 07 08 09 10 11 12; do
+            hdfs dfs -mkdir -p "/chicago-crimes/silver/year=$${year}/month=$${month}"
+          done
+        done
+        echo "Đã xác nhận 3 DataNode hoạt động."
+        echo "Đã khởi tạo thành công cấu trúc thư mục HDFS tại /chicago-crimes."
+
+  spark-normalize:
+    image: apache/spark:3.5.1
+    profiles: ["normalize"]
+    restart: "no"
+    depends_on:
+      namenode:
+        condition: service_healthy
+      datanode1:
+        condition: service_healthy
+      datanode2:
+        condition: service_healthy
+      datanode3:
+        condition: service_healthy
+    environment:
+      HADOOP_USER_NAME: root
+      PYTHONIOENCODING: utf-8
+      PYTHONPATH: /opt/jobs
+    volumes:
+      - ./normalize.py:/opt/jobs/normalize.py:ro
+    entrypoint: ["/opt/spark/bin/spark-submit"]
+    command:
+      - --master
+      - local[2]
+      - --driver-memory
+      - 1g
+      - /opt/jobs/normalize.py
+
+volumes:
+  chicago_namenode_data:
+  chicago_datanode1_data:
+  chicago_datanode2_data:
+  chicago_datanode3_data:

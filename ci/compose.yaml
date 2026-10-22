@@ -1,0 +1,71 @@
+x-hadoop-env: &hadoop-env
+  CORE_CONF_fs_defaultFS: hdfs://namenode:9000
+  HDFS_CONF_dfs_replication: "2"
+  HDFS_CONF_dfs_blocksize: "134217728"
+  HDFS_CONF_dfs_namenode_datanode_registration_ip___hostname___check: "false"
+  HADOOP_HEAPSIZE: "512"
+
+x-datanode: &datanode
+  image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+  environment:
+    <<: *hadoop-env
+    SERVICE_PRECONDITION: namenode:9870
+  depends_on:
+    namenode:
+      condition: service_healthy
+  healthcheck:
+    test: ["CMD", "curl", "-fsS", "http://localhost:9864/"]
+    interval: 5s
+    timeout: 5s
+    retries: 36
+    start_period: 15s
+  mem_limit: 1g
+
+services:
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    environment:
+      <<: *hadoop-env
+      CLUSTER_NAME: chicago-ci
+    ports: ["127.0.0.1:9870:9870"]
+    volumes:
+      - namenode:/hadoop/dfs/name
+      - ../artifacts:/artifacts
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9870/"]
+      interval: 5s
+      timeout: 5s
+      retries: 36
+      start_period: 15s
+    mem_limit: 1g
+  datanode1:
+    <<: *datanode
+    volumes: ["datanode1:/hadoop/dfs/data"]
+  datanode2:
+    <<: *datanode
+    volumes: ["datanode2:/hadoop/dfs/data"]
+  datanode3:
+    <<: *datanode
+    volumes: ["datanode3:/hadoop/dfs/data"]
+  spark-job:
+    build:
+      context: ..
+      dockerfile: ci/Dockerfile.spark
+    profiles: ["jobs"]
+    user: "0:0"
+    environment:
+      HADOOP_USER_NAME: root
+      CHICAGO_HDFS_URI: hdfs://namenode:9000
+      CHICAGO_COMMIT: ${GITHUB_SHA:-local}
+      CHICAGO_RUN_ID: ${CHICAGO_RUN_ID:-manual}
+      PYTHONIOENCODING: utf-8
+      PYTHONPATH: /opt/project
+    volumes: ["..:/opt/project"]
+    entrypoint: ["/opt/spark/bin/spark-submit", "--master", "local[2]", "--driver-memory", "1g"]
+    mem_limit: 3g
+
+volumes:
+  namenode:
+  datanode1:
+  datanode2:
+  datanode3:

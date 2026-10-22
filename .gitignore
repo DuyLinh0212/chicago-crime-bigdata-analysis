@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
+.venv*/
+artifacts/
+evidence/
+*.log
+.DS_Store
+f.txt
+.airflow/
+.pytest_cache/
+spark-warehouse/
+metastore_db/
+derby.log

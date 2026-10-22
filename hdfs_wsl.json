@@ -1,0 +1,14 @@
+{
+  "distribution": "Ubuntu",
+  "user": "linh",
+  "hadoop_home": "/home/linh/hadoop",
+  "namenode_conf": "/home/linh/hadoop/etc/hadoop",
+  "datanode_confs": [
+    "/home/linh/hadoop-conf/dn1",
+    "/home/linh/hadoop-conf/dn2",
+    "/home/linh/hadoop-conf/dn3"
+  ],
+  "spark_home": null,
+  "spark_python": null,
+  "startup_timeout_seconds": 120
+}
