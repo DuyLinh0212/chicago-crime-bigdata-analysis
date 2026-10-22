@@ -31,9 +31,10 @@ jobs:
       - name: Chuẩn bị thư mục bằng chứng
         run: mkdir -p artifacts/{logs,manifests,screenshots,silver}
       - name: Cài trình duyệt chụp bằng chứng
+        timeout-minutes: 4
         run: |
-          python -m pip install --no-cache-dir playwright==1.56.0
-          python -m playwright install --with-deps chromium
+          python -m pip install --no-cache-dir --disable-pip-version-check --retries 2 --timeout 30 playwright==1.56.0
+          google-chrome --version
       - name: Tạo HDFS với ba DataNode trên GitHub
         run: |
           set -o pipefail

@@ -2,6 +2,7 @@
 import html
 import json
 import os
+import shutil
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
@@ -13,7 +14,7 @@ def main():
     OUT.mkdir(parents=True, exist_ok=True)
     results = []
     with sync_playwright() as p:
-        browser = p.chromium.launch(args=["--no-sandbox"])
+        browser = p.chromium.launch(executable_path=shutil.which("google-chrome") or shutil.which("chromium"), args=["--no-sandbox"])
         page = browser.new_page(viewport={"width": 1440, "height": 1000}, device_scale_factor=1)
         for name, url in [
             ("01-namenode", "http://127.0.0.1:9870/dfshealth.html#tab-datanode"),
